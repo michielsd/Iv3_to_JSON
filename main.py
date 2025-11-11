@@ -98,6 +98,62 @@ def parse_matrix(xls, sheet_name, keer_duizend_factor):
                 continue
     return out
 
+def parse_balans_baten_lasten(xls, sheet_name, keer_duizend_factor):
+    """
+    Parses baten/lasten sheets for rows linked to balance sheet codes (e.g. A121, A123).
+    Returns records for balans_baten or balans_lasten JSON sections.
+    """
+    df = read_sheet(xls, sheet_name, header=None)
+    if df.empty:
+        return []
+
+    df = df.fillna("")
+
+    # Detect header row with category codes (like 3.1, 3.2, 4.3.1 etc.)
+    cat_row = None
+    for i in range(0, 10):
+        row = df.iloc[i].astype(str).tolist()
+        if sum(1 for v in row if re.match(r'^\d+(\.\d+)+$', v.strip())) >= 3:
+            cat_row = i
+            break
+    if cat_row is None:
+        return []
+
+    # Map column index → category code (3.1, 3.2, etc.)
+    cat_map = {
+        j: str(df.iat[cat_row, j]).strip()
+        for j in range(df.shape[1])
+        if re.match(r'^\d+(\.\d+)+$', str(df.iat[cat_row, j]).strip())
+    }
+
+    results = []
+
+    # Iterate through rows below header row
+    for i in range(cat_row + 1, len(df)):
+        first_cell = str(df.iat[i, 0]).strip()
+        if not first_cell:
+            continue
+
+        # Detect balance sheet codes (A### or similar)
+        if re.match(r'^[A-Z]\d{3,4}$', first_cell):
+            balanscode = first_cell
+            for j, cat in cat_map.items():
+                val = str(df.iat[i, j]).strip()
+                if val == "" or val.lower() == "nan":
+                    continue
+                try:
+                    bedrag = float(val.replace(",", ".")) * keer_duizend_factor
+                    if bedrag != 0:
+                        results.append({
+                            "balanscode": balanscode,
+                            "categorie": cat,
+                            "bedrag": bedrag
+                        })
+                except:
+                    continue
+    return results
+
+
 def parse_balansstanden(xls, keer_duizend_factor):
     df = read_sheet(xls, "7.Balansstanden", header=None)
     if df.empty:
@@ -237,14 +293,16 @@ if run_button:
 
     lasten = parse_matrix(xls, "5.Verdelingsmatrix lasten", keer_duizend_factor)
     baten = parse_matrix(xls, "6.Verdelingsmatrix baten", keer_duizend_factor)
+    balans_lasten = parse_balans_baten_lasten(xls, "5.Verdelingsmatrix lasten", keer_duizend_factor)
+    balans_baten = parse_balans_baten_lasten(xls, "6.Verdelingsmatrix baten", keer_duizend_factor)
     balans_standen = parse_balansstanden(xls, keer_duizend_factor)
     kengetallen = parse_kengetallen(xls, boekjaar)
 
     data = {
         "lasten": lasten,
-        "balans_lasten": [],
+        "balans_lasten": balans_lasten,
         "baten": baten,
-        "balans_baten": [],
+        "balans_baten": balans_baten,
         "balans_standen": balans_standen,
         "kengetallen": kengetallen,
         "beleidsindicatoren": []
