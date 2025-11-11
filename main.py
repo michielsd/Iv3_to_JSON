@@ -12,7 +12,6 @@ uploaded_file = st.file_uploader("📂 Upload je Iv3 Excel bestand", type=["xlsx
 
 if not uploaded_file:
     st.info("Upload eerst een .xlsx bestand om verder te gaan.")
-    st.stop()
 
 xls = pd.ExcelFile(uploaded_file, engine="openpyxl")
 
